@@ -1,4 +1,4 @@
-const API = "/api";
+const API = import.meta.env.VITE_API_URL || "https://atria-hackathon-3.onrender.com";
 
 async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
@@ -61,7 +61,7 @@ export const api = {
     return request(`/store/inventory-movements?${params.toString()}`);
   },
   storeCheckout: (payload) => request("/store/checkout", { method: "POST", body: JSON.stringify(payload) }),
-  storeSales: (storeId = null) => request(`/store/sales${storeId ? `?store_id=${storeId}` : ""}`),
+  storeSales: (storeId = null) => request(`/store/sales${storeId ? `?store_id=\${storeId}` : ""}`),
   storeSale: (saleId) => request(`/store/sales/${saleId}`),
 };
 
