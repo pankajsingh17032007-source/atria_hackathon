@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 import json
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import DEMO_TODAY, FRONTEND_ORIGINS
+from .config import DEMO_TODAY
 from .database import get_conn, init_schema
 from .schemas import DecisionAction, HealthResponse, InventoryStockReceipt, StoreProductCreate, SupplierDeliveryUpdate, StoreCheckout
 from .seed import seed
@@ -15,7 +15,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="VoltPilot", version="1.0.0")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=FRONTEND_ORIGINS,
+        allow_origins=["*"],  # Allows requests from your live Vercel frontend and local development
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
@@ -153,11 +153,6 @@ def create_app() -> FastAPI:
 
     @app.post("/api/orders/{order_id}/supplier-update")
     def submit_supplier_update(order_id: int, body: SupplierDeliveryUpdate):
-        """Record a vendor delivery status/ETA update in SQLite.
-
-        This is a local hackathon simulation, not a real authenticated supplier portal.
-        It does not mark inventory as received or contact the named supplier.
-        """
         try:
             revised_date = date.fromisoformat(body.revised_expected_at)
         except ValueError as exc:
@@ -217,7 +212,6 @@ def create_app() -> FastAPI:
                  f"{po['supplier_name']} reported {body.status}; ETA changed from {previous_eta} to {revised_date.isoformat()}. Inventory unchanged.",
                  json.dumps(details)),
             )
-            # Recalculate pending recommendations with the updated ETA/status.
             engine.refresh(conn)
             return {
                 "ok": True,
@@ -251,13 +245,11 @@ def create_app() -> FastAPI:
 
     @app.post("/api/store/products")
     def create_store_product(body: StoreProductCreate):
-        """Add a new catalog SKU and its opening stock, using the same SQLite source of truth as VoltPilot analysis."""
         with get_conn() as conn:
             return storefront.create_store_product(conn, body)
 
     @app.post("/api/store/stock-receipts")
     def receive_store_stock(body: InventoryStockReceipt):
-        """Record receipt/restocking of an existing product at a selected store."""
         with get_conn() as conn:
             return storefront.receive_store_stock(conn, body)
 
@@ -331,7 +323,6 @@ def create_app() -> FastAPI:
         csv_text = payload.get("csv_text") if isinstance(payload, dict) else None
         with get_conn() as conn:
             result = forecasting.import_history_csv(conn, csv_text)
-            # Imported observations become the current sales source for the agent.
             refreshed = engine.refresh(conn)
             result["agent_recommendations_refreshed"] = len(refreshed)
             result["forecast_status"] = forecasting.get_status(conn)
@@ -342,8 +333,6 @@ def create_app() -> FastAPI:
         try:
             with get_conn() as conn:
                 result = forecasting.train_and_evaluate(conn)
-                # Regenerate the pending decisions so a model that beats the baseline
-                # can influence stock-risk calculations in the existing decision engine.
                 refreshed = engine.refresh(conn)
                 result["agent_recommendations_refreshed"] = len(refreshed)
                 return result
@@ -364,7 +353,7 @@ def create_app() -> FastAPI:
             seed(conn)
             storefront.ensure_store_catalog(conn)
             engine.refresh(conn)
-        return {"ok": True, "message": "Demo data reset to 9 Oct 2026 festival snapshot, including Store & POS catalog."}
+        return {"ok": True, "message": "Demo data reset successfully."}
 
     return app
 
